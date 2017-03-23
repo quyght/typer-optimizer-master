@@ -1,0 +1,41 @@
+%%%Srenght reduction
+
+
+foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;
+foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;foo : Int -> Int;
+foo a = let c = _*_ 12345678909999 2
+	in c;
+testcmd : IO Unit;
+testcmd =
+  %% Eh non, Typer n'a pas encore de syntaxe pratique pour écrire du code
+  %% monadique.  Donc si vous trouver ça très laid, c'est normal.
+  IO_bind
+      (Sys_cpu_time ())
+      (lambda t_start ->
+       let x = foo 9
+       in IO_bind
+              (Sys_cpu_time ())
+              (lambda t_end ->
+               let t = Float_- t_end t_start;
+                   stdout = File_stdout ()
+               in IO_bind (File_write stdout (Float_to_string t))
+                          (lambda _ -> File_write stdout "\n")));
+
+test : Unit;
+test = IO_run testcmd ();

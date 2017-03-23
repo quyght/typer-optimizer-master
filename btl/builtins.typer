@@ -1,0 +1,185 @@
+%%% builtins.typer --- Initialize the builtin functions
+
+%%    Copyright (C) 2011-2017  Free Software Foundation, Inc.
+%%
+%% Author: Pierre Delaunay <pierre.delaunay@hec.ca>
+%% Keywords: languages, lisp, dependent types.
+%%
+%% This file is part of Typer.
+%%
+%% Typer is free software; you can redistribute it and/or modify it under the
+%% terms of the GNU General Public License as published by the Free Software
+%% Foundation, either version 3 of the License, or (at your option) any
+%% later version.
+%%
+%% Typer is distributed in the hope that it will be useful, but WITHOUT ANY
+%% WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+%% FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+%% more details.
+%%
+%% You should have received a copy of the GNU General Public License along
+%% with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+%%% Commentary:
+
+%% Define builtin types and functions.
+%% This file MUST be correctly typed, in the sense that many of the types in
+%% here are "axioms" that the type checker must accept without being
+%% able to verify them.
+
+%%% Code:
+
+%%%% Base Types used in builtin functions
+
+%% The trivial type which carries no information.
+Unit    = typecons Unit unit;
+unit    = datacons Unit unit;
+() = unit;
+
+%% The empty type, with no constructors: nothing can have this type.
+Void = typecons Void;
+
+%% Eq : (l : TypeLevel) ≡> (t : Type_ l) ≡> t -> t -> Type_ l
+%% Eq' : (l : TypeLevel) ≡> Type_ l -> Type_ l -> Type_ l
+Eq_refl = Built-in "Eq.refl"
+                   ((l : TypeLevel) ≡> (t : Type_ l) ≡> (x : t)
+                    ≡> Eq (t := t) x x);
+
+Eq_cast = Built-in "Eq.cast"
+                   ((l1 : TypeLevel) ≡> (t : Type_ l1) ≡> (x : t) ≡> (y : t)
+                    ≡> (p : Eq (t := t) x y)
+                    ≡> (l2 : TypeLevel) ≡> (f : t -> Type_ l2)
+                    ≡> f x -> f y);
+
+%% Commutativity of equality!
+Eq_comm : (l : TypeLevel) ≡> (t : Type_ l) ≡> (x : t) ≡> (y : t)
+          ≡> (p : Eq (t := t) x y) -> Eq (t := t) y x;
+Eq_comm = lambda l t x y ≡> lambda p ->
+  Eq_cast (f := lambda xy -> Eq (t := t) xy x)
+          (p := p)
+          Eq_refl;
+
+%% General recursion!!
+%% Whether this breaks onsistency or not is a good question.
+%% The basic idea is the following:
+%%
+%%   The `witness` argument presumably makes sure that "Y f" can only
+%%   create new recursive values for types which were already inhabited.
+%%   So there's no `f` such that `Y f : False`.
+%%
+%% But this is not sufficient, because you could use `Y` to create
+%% new recursive *types* which then let you construct new arbitrary
+%% recursive values of previously uninhabited types.
+%% E.g. you could create Y <something> = ((... → t) -> t) -> t
+%% and then give the term "λx. x x" inhabiting that type, and from that
+%% get a proof of False.
+%%
+%% So we have a secondary restriction: This `Y` is a builtin primitive/axiom
+%% with no reduction rule, so that Y <something> is never convertible
+%% to something like ((... → t) -> t) -> t
+%%
+%% Of course, we do have a "natural" evaluation rule for it, so after type
+%% checking we can run our recursive functions just fine, but those
+%% recursive functions won't be unfolded during type checking.
+%%
+%% FIXME: Really, this Y should be used internally/transparently for any
+%% function which has not been termination-checked successfully (or at all).
+Y = Built-in "Y" ((a : Type) ≡> (b : Type) ≡> (witness : a -> b) ≡>
+                  ((a -> b) -> (a -> b)) -> (a -> b));
+
+%% Basic operators
+_+_ = Built-in "Int.+" (Int -> Int -> Int);
+_-_ = Built-in "Int.-" (Int -> Int -> Int);
+_*_ = Built-in "Int.*" (Int -> Int -> Int);
+_/_ = Built-in "Int./" (Int -> Int -> Int);
+
+Float_+ = Built-in "Float.+" (Float -> Float -> Float);
+Float_- = Built-in "Float.-" (Float -> Float -> Float);
+Float_* = Built-in "Float.*" (Float -> Float -> Float);
+Float_/ = Built-in "Float./" (Float -> Float -> Float);
+Float_to_string = Built-in "Float.to_string" (Float -> String);
+
+Bool = typecons (Boolean) (true) (false);
+true = datacons Bool true;
+false = datacons Bool false;
+
+Int_< = Built-in "Int.<" (Int -> Int -> Bool);
+Int_> = Built-in "Int.>" (Int -> Int -> Bool);
+Int_eq = Built-in "Int.=" (Int -> Int -> Bool);
+Int_<= = Built-in "Int.<=" (Int -> Int -> Bool);
+Int_>= = Built-in "Int.>=" (Int -> Int -> Bool);
+
+String_eq = Built-in "String.=" (String -> String -> Bool);
+Sexp_eq   = Built-in   "Sexp.=" (Sexp -> Sexp -> Bool);
+
+%% -----------------------------------------------------
+%%       List
+%% -----------------------------------------------------
+
+List : Type -> Type;
+%% List a = typecons List (nil) (cons a (List a));
+%% nil = lambda a ≡> datacons (List a) nil;
+%% cons = lambda a ≡> datacons (List a) cons;
+List = typecons (List (a : Type)) (nil) (cons a (List a));
+nil = datacons List nil;
+cons = datacons List cons;
+
+%%%% Macro-related definitions
+
+%% block_   = Built-in "block_"   (List Pretoken -> Sexp);
+Sexp_symbol  = Built-in "Sexp.symbol"  (String    -> Sexp);
+Sexp_string  = Built-in "Sexp.string"  (String    -> Sexp);
+Sexp_node    = Built-in "Sexp.node"    (Sexp -> List Sexp -> Sexp);
+Sexp_integer = Built-in "Sexp.integer" (Int       -> Sexp);
+Sexp_float   = Built-in "Sexp.float"   (Float     -> Sexp);
+
+Macro  = typecons (Macro)
+                  (macro (List Sexp -> Sexp));
+macro = datacons Macro macro;
+
+Macro_expand : Macro -> List Sexp -> Sexp;
+Macro_expand m args = case m
+  | macro f => (f args);
+
+Sexp_dispatch = Built-in "Sexp.dispatch" (
+                    (a : Type) ≡>
+                    Sexp
+                    -> (node   : Sexp -> List Sexp -> a)
+                    -> (symbol : String -> a)
+                    -> (string : String -> a)
+                    -> (int    : Int -> a)
+                    -> (float  : Float -> a)
+                    -> (block  : List Sexp -> a)
+                    -> a
+                );
+
+%%%% Monads
+
+%% Builtin bind
+IO_bind = Built-in "IO.bind" (
+              (a : Type) ≡>
+              (b : Type) ≡>
+              IO a -> (a -> IO b) -> (IO b));
+
+IO_return = Built-in "IO.return" ((a : Type) ≡> a -> IO a);
+
+%% `runIO` should have type IO Unit -> b -> b
+%% or IO a -> b -> b, which means "run the IO, throw away the result,
+%% and then return the second argument unchanged".  The "dummy" b argument
+%% is actually crucial to make sure the result of runIO is used, otherwise
+%% the whole call would look like a dead function call and could be
+%% optimized away!
+IO_run = Built-in "IO.run" ((a : Type) ≡> IO Unit -> a -> a);
+
+%% File monad
+
+%% Define operations on file handle.
+File_open   = Built-in "File.open"   (String -> String -> IO FileHandle);
+File_stdout = Built-in "File.stdout" (Unit -> FileHandle);
+File_write  = Built-in "File.write"  (FileHandle -> String -> IO Unit);
+File_read   = Built-in "File.read"   (FileHandle -> Int -> IO String);
+
+Sys_cpu_time = Built-in "Sys.cpu_time" (Unit -> IO Float);
+Sys_exit     = Built-in "Sys.exit" (Int -> IO Unit);
+
+%%% builtins.typer ends here.

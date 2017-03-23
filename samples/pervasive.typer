@@ -1,0 +1,14 @@
+%% (_=_) = (l : TypeLevel) ≡> (t : Type@ l) ≡> t -> t -> Type;
+
+Nat = typecons Type (zero : Nat) (succ : Nat -> Nat);
+
+Macro = typecons Type (MacroExp : Nat -> Macro);
+
+%% Use for `cast'.
+Equiv = typecons (t -> t -> Type) (refl: Equiv a a);
+
+or = typecons (t -> t -> Type)
+                (left: t1 -> or t1 t2)
+                (right: t2 -> or t1 t2);
+
+classical-or = lambda x -> lambda y -> Not (Not (or x y));

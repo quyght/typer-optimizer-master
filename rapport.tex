@@ -1,0 +1,112 @@
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+
+\title{Travail pratique \#2 - IFT-3065/6232}
+\author{Samuel Laferrière \and Patrice Wilhelmy}
+
+\begin{document}
+
+\maketitle
+
+\section{Optimisations}
+Nous avons implanté 3 optimisations:
+\begin{itemize}
+\item Constant Folding (exemples dans fichié opt1.typer)
+\item Propagation de Constantes (exemples dans fichié opt2.typer)
+\item Strength Reduction (exemples dans fichié opt3.typer)
+\end{itemize}
+Nous avons aussi ajouté le code de opt1.typer, opt2.typer et opt3.typer à test.typer, mais nos test se feront autour de nos trois fichier séparé. 
+\subsection{Constant Folding}
+
+Comme première optimisation, nous avons choisi d'implémenter le constant folding puisque ceci nous semblait simple et relativement facile à implanter. Cela était une bonne idée puisque ça nous a permis de se familiariser avec OCaml, Typer, et le code source de ce dernier. C'est plutôt à ce niveau que les problèmes ont surgis, mais nous en parlerons plus en profondeur dans les sections subséquentes. Les foldings que nous avons implantés peuvent être groupés en 4 grandes catégories:
+\begin{itemize}
+\item Identité
+\item Opération binaire
+\item Relation
+\item Case
+\end{itemize}
+
+Dans la première catégorie, nous retrouvons $0+x \rightarrow x$, $1 \times x \rightarrow x$, $x/1\rightarrow 1$ et $x-0 \rightarrow x$. Notons que $x$ ici peut être n'importe quel expression (appel de fonction, variable, let, if, etc.). Le système de type assure que la valeur que cette expression sera de type Integer, et donc que les règles d'opérations binaires avec identités s'appliquent.\\
+
+Dans la deuxième catégorie, nous retrouvons les opérations binaires avec des valeurs integer complètements évalués, par exemple $3+4-9 \rightarrow -2$. Nous n'avons pas implanté les optimisations pour les valeurs de Type Float puisqu'ils sont exactement pareil. Bien-sur, dans un vrai compilateur, ceux-ci seraient présents aussi. \\
+
+Dans la troisième catégorie, nous retrouvons les relations pour valeurs Integer. Ces optimisations sont analogues à celle pour ls opérations binaires, mais elles retournent une valeur de type Bool (true ou false) à la place d'un Integer. Par exemple, $3<5 \rightarrow true$. Cette catégorie est probablement la plus importante, puisqu'elle nous permet d'optimiser la dernière catégorie: les cases. \\
+
+Les cases sont la dernière catégorie d'optimisations constant folding que nous avons implantés. Un exemple simple serait
+\begin{verbatim}
+case (1<2)
+ | true => 0
+ | false => 1;
+\end{verbatim}
+sera réduit tout simplement à 0. L'optimisation pour la relation $1<2$ est faite en premier, qui permet ensuite au case de réaliser qu'il a déja une valeure (true) et qu'il peut donc déja choisir la bonne branche (qui sera prit dans tous les cas).
+
+\subsection{Propagation de Constantes}
+
+La propagation de constantes est très simple conceptuellement, mais est l'optimisation la plus dure à implanter. C'est parce que les 2 autres optimisations se font localement, alors que celle-ci se fait globalement. C'est-à-dire qu'il faut trimbaler une map représentant le contexte dans lequel nous nous trouvons, qui celui-ci contient la valeur de toutes les variables avec une valeur constante. Un des défis majeurs rencontrés était de bien comprendre l'interface functorielle des modules de OCaml. Nous en parlerons plus dans une section subséquente. \\
+
+Un exemple classique de propagation de constantes (qui se trouve dans notre fichié opt2.typer) est
+\begin{verbatim}
+let c = 3
+in let d = 4 + c
+in c + d;
+\end{verbatim}
+La valeur de $c$ doit premièrement être propagé dans l'expression du let. Le deuxième $let$ deviendra donc \verb|let d = 4 + 3|. Nous voyons ici un petit problème. Nous voudrions propager la valeur de $d$ dans l'expression de body du deuxième $let$, mais nous ne pouvons pas puisque $3+4$ n'est pas une valeur constante. Nous pouvons cependant utiliser notre autre optimisation (constant folding) afin de trouver cette valeur et d'ainsi pouvoir continuer à propager non seulement $c$, mais aussi $d$. Ceci est un autre problème dont nous allons parler dans une section subséquente: comment bien interlacer toutes les optimisations?
+
+\subsection{Strength Reduction}
+
+Pour le Strength Reduction, nous nous sommes limiter a faire la reduction de la multiplication par deux. Pour ce faire, à la vu d'une expression qui multiplie une variable par deux, nous retournons l'expression de la variable + cette même variable. 
+
+Nous nous sommes limité à cela mais nous sommes conscient qu'il existe d'autre type de strenght reduction possible. En effet, nous aurions pu généraliser le cas à toutes les multiplications. Pour ce faire, nous aurions lu la multiplication de x par y et puis retournez une expression contenant l'addition de y fois x. 
+
+Nous aurions pu aussi faire le strenght reduction de multiplication dans une boucle. Il aurait fallu vérifier si dans les boucles il y avait des multiplication, puis il aurait fallu créer une variable à l'extérieur de la boucle, puis changer la multiplication dans la boucle par une addition avec la nouvelle variable hors boucle et puis additionner cette variable avec elle-meme. 
+
+\section{Problèmes, choix, surprises}
+\subsection{Entremeler les Optimisations}
+
+Un problème très important que nous avons rencontré est celui de l'ordre des optimisations. Rappelons nous l'exemple de code dans la section sur la propagation de constantes. Dans cet exemple, afin de pouvoir propager $d$, nous devions utiliser le constant folding afin de trouver la valeur de $d$. Dans notre cas, puisque nous n'avons qu'implanté 3 optimisations, dont une seule globale, le problème n'était pas de si grande envergure. Il s'agit de faire le constant folding en s'assurant de rouler les deux autres optimisations sur l'expression de chaque valeur déclaré dans un let, afin de décider si celle-ci peut être calculé au compile time. Mais dans le cas général, ou une trentaine, voir même plus d'optimisations sont utilisées, et plusieurs sont de nature globale, il y aura nécessairement des dépendences entre les différentes optimisations (par exemple, dans notre cas, constant propagation dépend de constant folding). Une solutions serait de trouvé un ordre de dépendence linéaire sur nos optimisations. Mais si un cycle existe, alors peut-etre devrons nous rouler chaque optimisations plusieurs fois sur le même bout de code. Nous ne pouvons que poser la question, mais ne sommes pas capable d'y répondre.
+
+\subsection{Functors}
+
+Un autre problème rencontré est celui des functors, ou plus précisément des modules paramétrisés. Dans notre cas, nous avons eu besoin d'une Map pour implanter le constant propagation. Celle-ci cependant est paramétrisé avec un type, ce qui permet de crée des Map de différents types. Le truc est de comprendre que l'interface pour ces fameuses Map prend une structure comme paramètre, et non pas un simple type. Notons que le ``String'' dans
+\begin{verbatim}
+module String_set = Set.Make (String);;
+\end{verbatim}
+est en fait un module. Ceci est équivalent à
+\begin{verbatim}
+module String_set = Set.Make (struct
+                                type t = string
+                                let compare = compare
+                              end);;
+\end{verbatim}
+``String'' est en fait exactement ce même struct, qui est disponible dans la standard library. Notons que les interfaces functorielle prennent une struct plutôt qu'un simple type puisqu'elles ont besoin de plus d'information. Dans notre cas, nous avons besoin de fournir une fonction de comparaison, afin de pouvoir comparer les keys de notre Map (dans notre cas nous utilisons le string compare standard, mais dans un autre cas peut-etre tous les mots commençant avec un $A$ devrait-ils représenter la même key).
+
+\subsection{de Bruijn}
+
+Les indices de de Bruijn sont utilisés dans Typer, mais nous ne semblons pas en avoir besoin pour la partie optimisation. Nous avons utilisé une Map avec des keys de String, et avons tout simplement discarté les indices de Bruijn. Cela n'a pas semblé causer de problème. Peut-être ne comprenons-nous pas assez bien ces fameux indices. Le but de cette sous-section est de laisser savoir au professeur qu'il serait peut-être intéressant de revenir sur cette question en classe.
+
+\section{Discution sur les résultats}
+
+À priori, pour le constant propagation nous n'étions pas capable de voir de différence de temps dans les tests que nous avons fait. Nous supposons que la différence de temps à l'éxécution est trop petite pour être perceptible et qu'elle est caché dans les fluctuations d'éxécution. Voici une moyenne de la vitesse d'exécution réalisé sur une centaine d'éxécution 
+\begin{description}
+\item[opt1 moyenne (Constant folding)] 1.6219998E-5
+\item[opt1 moyenne sans optimisation] 2.1119995E-5
+\item[opt3 moyenne (Strenght reduction] 1.313E-5
+\item[opt3 moyenne sans optimisation] 1.6290003E-5
+\end{description}
+Pour les 2 autres méthodes, nous voyons amélioration intéressante. Pour les deux résultats, nous voyons une amélioration d'environ 20\% - 25\% à l'exécution. 
+
+\section{Sources}
+Nous avons utilisé majoritairement trois sources provenant de l'internet.
+\begin{description}
+\item[Notes de cours] https://www.iro.umontreal.ca/~monnier/6232/notes-optim.pdf
+\item[Wikipedia] \href{https://en.wikipedia.org/wiki/Constant_folding}{https://en.wikipedia.org/wiki/Constant\_folding}
+\item[Documentation OCaml] https://ocaml.org/learn/tutorials/map.html
+
+\end{description}
+
+
+
+\end{document}
